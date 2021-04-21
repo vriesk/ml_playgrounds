@@ -71,20 +71,19 @@ def generate_wave_sample(rng, period, size):
     # The additional good part is that the formula works equally well for negative numbers, so instead of
     # writing two codepaths, we can simply negate the argument and reverse the scaling factor.
     if period.scaling != 1.0:
-      # Let's not deal with non-converging series (infinite sums).
-      if period.scaling > 1.0:
-          period.scaling = 1.0/scaling
-          np.negative(out, out=out)
-
-      signal_cutoff = period.value / (1 - period.scaling)
-
-      np.piecewise(sample,
-              [sample >= signal_cutoff],
-              [
-                  lambda x: 0., # No signal after reaching the limit.
-                  lambda x: np.log(1 - x * (1 - period.scaling) / period.value) / np.log(period.scaling),
-              ],
-              out=sample)
+        # Let's not deal with non-converging series (infinite sums).
+        if period.scaling > 1.0:
+            period = Period(value=period.value, scaling=1./period.scaling)
+            np.negative(sample, out=sample)
+  
+        signal_cutoff = period.value / (1 - period.scaling)
+  
+        sample = np.piecewise(sample,
+                [sample >= signal_cutoff],
+                [
+                    lambda x: 0., # No signal after reaching the limit.
+                    lambda x: np.log(1 - x * (1 - period.scaling) / period.value) / np.log(period.scaling),
+                ])
     else:
         sample /= period.value
 
@@ -140,7 +139,8 @@ def __get_args():
     parser.add_argument('--signal_size', type=int, default=None, required=True, help="Size of the signal segment of the sample.")
     parser.add_argument('--prediction_size', type=int, default=None, required=True, help="Size of the prediction segment of the sample.")
     parser.add_argument('--rng_seed', type=int, default=None, help="Seed for the RNG. Defaults to system entropy.")
-    parser.add_argument('--output', type=str, default=None, required=True, help="Output filename (NPY format).")
+    parser.add_argument('--output_prefix', type=str, default=None, required=True, help="Output filename (NPY format).")
+    parser.add_argument('--output_count', type=int, default=1, help="Generate that many output files.")
     parser.add_argument('--min_period', type=float, default=10.0, help="Lower bound of the period randomization uniform distribution.")
     parser.add_argument('--max_period', type=float, default=1000.0, help="Upper bound of the period randomization uniform distribution.")
     parser.add_argument('--period_scaling_stddev', type=float, default=0., help="Standard deviation for the period scaling lognormal distribution (0 disables scaling)")
@@ -164,14 +164,15 @@ if __name__ == "__main__":
     if args.min_jitter_stddev is not None and args.max_jitter_stddev is not None:
         jitter_generator = StandardNoiser(rng=rng, min_stddev=args.min_jitter_stddev, max_stddev=args.max_jitter_stddev)
 
-    data = generate_wave_samples(
-            rng=rng,
-            sample_count=args.sample_count,
-            signal_size=args.signal_size,
-            prediction_size=args.prediction_size,
-            period_sampler=period_sampler,
-            noise_generator=noise_generator,
-            jitter_generator=jitter_generator)
-
-    np.save(args.output, data, allow_pickle=False)
-
+    for i in range(0, args.output_count):
+        data = generate_wave_samples(
+                rng=rng,
+                sample_count=args.sample_count,
+                signal_size=args.signal_size,
+                prediction_size=args.prediction_size,
+                period_sampler=period_sampler,
+                noise_generator=noise_generator,
+                jitter_generator=jitter_generator)
+    
+        np.save("%s_%03d.npy" % (args.output_prefix, i), data, allow_pickle=False)
+    
